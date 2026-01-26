@@ -40,7 +40,7 @@ contract NFTMarketPlatformUpgradeV1 is Initializable, UUPSUpgradeable, Reentranc
     mapping(uint256 => mapping(address => uint256)) public pendingReturns;
 
     // 平台手续费[基点（bp），10000 = 100%]
-    uint256 public platformFee = 200; 
+    uint256 public platformFee; 
 
     // 手续费接收地址
     address public feeRecipient;
@@ -84,6 +84,7 @@ contract NFTMarketPlatformUpgradeV1 is Initializable, UUPSUpgradeable, Reentranc
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
         feeRecipient = _feeRecipient;
+        platformFee = 200;
         // dataFeed = AggregatorV3Interface(0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43);
     }
 
@@ -107,9 +108,9 @@ contract NFTMarketPlatformUpgradeV1 is Initializable, UUPSUpgradeable, Reentranc
      * @param newImplementation 新的实现合约地址
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
-        // 仅合约所有者可升级
-        require(newImplementation.code.length > 0, "Not a contract");
-        require(newImplementation!=address(0), "newImplementation is zero address");
+        // // 仅合约所有者可升级
+        // require(newImplementation.code.length > 0, "Not a contract");
+        // require(newImplementation!=address(0), "newImplementation is zero address");
     }
    
     /**
@@ -150,7 +151,7 @@ contract NFTMarketPlatformUpgradeV1 is Initializable, UUPSUpgradeable, Reentranc
      * @param auctionId 拍卖ID
      * @notice 需要支付足够的ETH，出价必须高于当前最高出价的5%
      */
-    function placeBid(uint256 auctionId) external payable {
+    function placeBid(uint256 auctionId) public payable virtual {
         Action storage auction = actions[auctionId];
         require(auction.isActive, "Auction is not active");
         require(block.timestamp < auction.endTime, "Auction has ended");
