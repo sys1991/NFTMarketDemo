@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -15,7 +16,7 @@ import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interf
  * @dev 简单的NFT市场平台，允许用户列出、购买和取消NFT销售，以及进行英式拍卖
  * @notice 使用ReentrancyGuard防止重入攻击
  */
-contract NFTMarketPlatformUpgradeV1 is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable, OwnableUpgradeable, ERC165 {
+contract NFTMarketPlatformUpgradeV1 is IERC721Receiver, Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable, OwnableUpgradeable, ERC165 {
 
     AggregatorV3Interface internal dataFeed;
 
@@ -142,6 +143,9 @@ contract NFTMarketPlatformUpgradeV1 is Initializable, UUPSUpgradeable, Reentranc
             isActive: true
         });
 
+        // 转移NFT给合约托管
+        token.safeTransferFrom(msg.sender, address(this), tokenId);
+
         emit AuctionCreated(auctionId, msg.sender, nftContract, tokenId, startPrice, block.timestamp + (durationHours * 1 hours));
         return auctionId;
     }
@@ -186,6 +190,8 @@ contract NFTMarketPlatformUpgradeV1 is Initializable, UUPSUpgradeable, Reentranc
     function withdrawBid(uint256 auctionId) external {
         uint256 amount = pendingReturns[auctionId][msg.sender];
         require(amount > 0, "No funds to withdraw");
+        Action storage auction = actions[auctionId];
+        require(block.timestamp > auction.endTime, "Auction has not ended");
 
         // 清零待退款金额
         pendingReturns[auctionId][msg.sender] = 0;
@@ -231,6 +237,8 @@ contract NFTMarketPlatformUpgradeV1 is Initializable, UUPSUpgradeable, Reentranc
         // 更新拍卖状态
         actions[auctionId].isActive = false;
 
+        IERC721 token = ERC721(auction.nftContract);
+
         if (auction.highestBidder != address(0)) {
             // 计算手续费
             uint256 feeAmount = (auction.highestBid * platformFee) / 10000;
@@ -243,14 +251,13 @@ contract NFTMarketPlatformUpgradeV1 is Initializable, UUPSUpgradeable, Reentranc
             // 转账手续费
             (bool successFee, ) = feeRecipient.call{value: feeAmount}("");
             require(successFee, "Transfer fee failed");
-
             // 转移NFT给最高出价者
-            IERC721 token = ERC721(auction.nftContract);
-            token.safeTransferFrom(auction.seller, auction.highestBidder, auction.tokenId);
+            token.safeTransferFrom(address(this), auction.highestBidder, auction.tokenId);
 
             emit AuctionEnded(auctionId, auction.highestBidder, auction.highestBid);
         } else {
             // 如果没有出价者，NFT保持在卖家手中
+            token.safeTransferFrom(address(this), auction.seller, auction.tokenId);
             emit AuctionEnded(auctionId, address(0), 0);
         }
     }
@@ -282,5 +289,32 @@ contract NFTMarketPlatformUpgradeV1 is Initializable, UUPSUpgradeable, Reentranc
         feeRecipient = _feeRecipient;
     }
 
+    // 实现 ERC165 接口检测
+    function supportsInterface(bytes4 interfaceId) 
+        public 
+        view 
+        virtual 
+        override(ERC165) 
+        returns (bool) 
+    {
+        return 
+            interfaceId == type(IERC721Receiver).interfaceId || 
+            super.supportsInterface(interfaceId);
+    }
+    
+    // 实现 ERC721 接收函数
+    function onERC721Received(
+        address operator,
+        address from,
+        uint256 tokenId,
+        bytes calldata data
+    ) external override returns (bytes4) {
+        // 这里可以添加接收逻辑
+        // 例如：记录接收的 NFT
+        // 或执行其他操作
+        
+        // 必须返回这个魔法值
+        return this.onERC721Received.selector;
+    }
 
 }   
