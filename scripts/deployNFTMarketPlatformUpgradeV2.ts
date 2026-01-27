@@ -1,5 +1,5 @@
 import { network } from "hardhat";
-
+// 可以不执行。后续升级过程中会自动部署该合约！！！！！！！！！！！！
 async function main() {
     const connection = await network.connect();
 

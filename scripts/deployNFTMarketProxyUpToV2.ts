@@ -1,6 +1,51 @@
 import { network } from "hardhat";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
+async function upgradeUUPSProxy(
+  ethers: any,
+  proxyAddress: string,
+  NewImplementationFactory: any,
+  signer: any,
+  initArgs?: any[], // 新增：初始化参数
+  
+  initFunctionName: string = "initializeV2", // 新增：初始化函数名
+  
+) {
+  
+  // 1. 部署新的实现合约
+  const newImplementation = await NewImplementationFactory.connect(signer).deploy();
+  await newImplementation.waitForDeployment();
+  const newImplementationAddress = await newImplementation.getAddress();
+
+  // 2. 编码初始化数据（如果有的话）
+  let initData = "0x";
+  if (initArgs && initArgs.length > 0) {
+    initData = NewImplementationFactory.interface.encodeFunctionData(
+      initFunctionName,
+      initArgs
+    );
+  }
+
+  // 3. 获取代理合约实例
+  const proxy = await ethers.getContractAt(
+    NewImplementationFactory.interface,
+    proxyAddress
+  );
+
+  // 4. 调用 upgradeToAndCall 函数（原子化升级+初始化）
+  const upgradeTx = await proxy.connect(signer).upgradeToAndCall(
+    newImplementationAddress,
+    initData
+  );
+  await upgradeTx.wait();
+
+  // 5. 返回升级后的代理合约实例
+//   return await ethers.getContractAt(NewImplementationFactory.interface, proxyAddress);
+  return {
+        proxy: await ethers.getContractAt(NewImplementationFactory.interface, proxyAddress),
+        newImplementationAddress,
+    };
+}
 
 async function main() {
     const connection = await network.connect();
@@ -36,13 +81,6 @@ async function main() {
     }
 
 
-    const nftMarketPlatformUpgradeV2Address = process.env.NFT_MARKETPLATFORM_UPGRADE_V2_ADDRESS || "";
-
-    if (!nftMarketPlatformUpgradeV2Address) {
-    throw new Error(
-      "Please deploy modules first using deployNFTMarketPlatformUpgradeV2.ts and set NFT_MARKETPLATFORM_UPGRADE_V2_ADDRESS in .env"
-    );
-  }
     // 获取网络名称（从命令行参数 --network 获取）
     let networkName = "localhost"; // 默认值
     const networkIndex = process.argv.indexOf("--network");
@@ -60,54 +98,38 @@ async function main() {
             networkName = "hardhat";
         }
     }
-
     console.log("\n=== Configuration ===");
-    console.log("nftMarketPlatformUpgradeV2Address:", nftMarketPlatformUpgradeV2Address);
+    // console.log("nftMarketPlatformUpgradeV2Address:", nftMarketPlatformUpgradeV2Address);
     console.log("Network:", networkName);
     console.log("Deploying contracts with the account:", deployer.address);
-
-    // 获取合约工厂
-    const proxy = await ethers.getContractAt(
-        "NFTMarketPlatformUpgradeV2",
-        proxyAddress
+    // 获取 V2 Factory
+    const NFTMarketV2Factory = await ethers.getContractFactory("NFTMarketPlatformUpgradeV2");
+    // 升级并初始化
+    const { proxy, newImplementationAddress } = await upgradeUUPSProxy(
+        ethers,
+        proxyAddress,
+        NFTMarketV2Factory,
+        deployer,
+        [mockUSDCAddress, mockChainlinkPriceFeedAddress],
+        "initializeV2"
     );
-
-    // 调用 upgradeToAndCall 函数（UUPS 模式）
-    console.log("Upgrading proxy to new implementation...");
-    const upgradeTx = await proxy.connect(deployer).upgradeToAndCall(
-        nftMarketPlatformUpgradeV2Address,
-        "0x" // 空数据，只升级
-    );
-     await upgradeTx.wait();
-    console.log("Upgrade transaction confirmed");
-    const upgradedAddress = proxyAddress; // 代理地址不变
-    console.log("NFTMarketProxy deployed to:", proxyAddress);
 
     // 验证部署
     const NFTMarketPlatformUpgradeV2_ = await ethers.getContractAt(
         "NFTMarketPlatformUpgradeV2",
         proxyAddress
     );
-
-    // 调用V2的初始化函数
-  try {
-    const tx = await NFTMarketPlatformUpgradeV2_.initializeV2(mockUSDCAddress,mockChainlinkPriceFeedAddress);
-    await tx.wait();
-    console.log(" V2 initialization completed");
-  } catch (error: any) {
-    if (error.message.includes("already initialized")) {
-      console.log(" V2 already initialized");
-    } else {
-      throw error;
-    }
-  }
+    const upgradedAddress = await proxy.getAddress();
+    console.log("\n=== Upgrade Info ===");
+    console.log("Proxy Address (unchanged):", upgradedAddress);
+    console.log("New Implementation Address:", newImplementationAddress);
 
     const deployedPlatformFee = await NFTMarketPlatformUpgradeV2_.platformFee();
     console.log("\n=== Verification ===");
     console.log("Platform Fee:", deployedPlatformFee.toString());
     return {
-        proxy: proxyAddress,
-        implementation: nftMarketPlatformUpgradeV2Address,
+        proxy: upgradedAddress,
+        implementation: newImplementationAddress,
     };
 }
 main().catch((error) => {
