@@ -26,5 +26,16 @@ npx hardhat test test/MyNFTToken.ts --coverage
 # --grep xxx 只测试某一个describe
 ```
 
+## 本地部署
+```shell
+# 启动本地节点
+npx hardhat node
+
+# 部署到指定网络
+npx hardhat run scripts/deployNFTToken.ts --network localhost
+
+npx hardhat run scripts/deployMockUsdc.ts --network localhost
+```
+
 ## 单元测试报告
 ![alt text](image.png)
