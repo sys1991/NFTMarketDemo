@@ -37,6 +37,14 @@ npx hardhat node
 npx hardhat run scripts/deployNFTToken.ts --network localhost
 
 npx hardhat run scripts/deployMockUsdc.ts --network localhost
+
+npx hardhat run scripts/deployChainlinkPriceFeed.ts --network localhost
+
+npx hardhat run scripts/deployNFTMarketPlatformUpgradeV1.ts --network localhost
+
+npx hardhat run scripts/deployNFTMarketProxyToV1.ts --network localhost
+
+npx hardhat run scripts/callAuction.ts --network localhost  # 本地部署后调用测试
 ```
 
 ## 单元测试报告
